@@ -1,0 +1,93 @@
+doctype html
+html(lang="en")
+  head
+    meta(charset="UTF-8")
+    meta(name="viewport", content="width=device-width, initial-scale=1.0")
+    title MCP Tool Administration
+    link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/antd/dist/antd.min.css")
+    link(rel="stylesheet", href="/css/admin.css")
+
+  body
+    div.container
+      div.header
+        h2 MCP Tool Administration
+        p.text-secondary Configure and manage your MCP tools. Start by entering your Application Name to access your tools.
+      
+      div.card
+        div.flex.flex-vertical.gap-small
+          label.label(for="applicationName") Application Name:
+          div.input-group
+            input.input#applicationName(type="text", placeholder="Enter your Application Name")
+            button.button.button-primary#loadTools(style="margin-left: 8px;")
+              | Load Tools
+          p.error-text#applicationNameError
+
+      div.card#applicationContainer(style="display: none;")
+        div.flex.flex-vertical.gap-small
+          h3 Backend Configuration
+          p.text-secondary Set your backend URL for this Application Name
+          div.form-item
+            label.label(for="backendUrl") Backend URL:
+            div.input-group
+              input.input#backendUrl(type="text", placeholder="Enter your backend URL (e.g., https://api.example.com)")
+            p.error-text#backendUrlError
+            p.text-secondary(style="margin-top: 8px;")
+              | When a backend URL is configured, all tools will automatically forward requests to endpoints based on 
+              | the tool name. For example, if your backend URL is 
+              code https://api.example.com
+              |  and the tool name 
+              | is 
+              code weather
+              | , requests will be sent to 
+              code https://api.example.com/weather
+              | . 
+              | Each endpoint should accept POST requests with tool parameters in the JSON body and return JSON responses.
+          button.button.button-primary#saveBackendUrl(style="align-self: flex-start;")
+            | Save Configuration
+
+      div.flex.flex-vertical.gap-medium#toolsContainer(style="display: none;")
+        div.flex.flex-between.flex-align-center
+          h3 Tools
+          button.button.button-primary#addToolButton
+            span.button-icon +
+            |  Add New Tool
+        p.text-secondary
+          | Define individual tools below. Each tool can have its own set of parameters (name, type, description).
+        table#toolsTable
+          thead
+            tr
+              th(style="width: 20%") Name
+              th(style="width: 30%") Description
+              th Parameters
+              th(style="width: 120px") Actions
+          tbody#toolsList
+            // Tools will be inserted here dynamically
+            
+    // Tool Modal
+    div.modal#toolModal
+      div.modal-content
+        div.modal-header
+          h3#modalTitle Add New Tool
+          span.close#closeModal &times;
+        div.modal-body
+          form#toolForm
+            div.form-item
+              label.label(for="toolName") Name
+              input.input#toolName(type="text", placeholder="Tool Name", required)
+              div.error-text#toolNameError
+            div.form-item
+              label.label(for="toolDescription") Description
+              textarea.textarea#toolDescription(rows="2", placeholder="Tool Description", required)
+              div.error-text#toolDescriptionError
+            div.form-item
+              label.label Parameters
+              div.flex.flex-vertical.gap-small#parametersContainer
+                // Parameters will be inserted here dynamically
+              button.button#addParameterButton(type="button", style="width: 100%; margin-top: 8px;")
+                span.button-icon +
+                |  Add Parameter
+        div.modal-footer
+          button.button#cancelModal(type="button") Cancel
+          button.button.button-primary#saveToolButton(type="button") Save
+    
+    script(src="/js/admin.js") 

@@ -1,0 +1,4 @@
+/typescript-sdk
+/node_modules
+/build
+.env

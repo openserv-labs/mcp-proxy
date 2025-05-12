@@ -1,0 +1,55 @@
+doctype html
+html
+  head
+    title Dynamic MCP Server
+    style.
+      body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+      h1, h2, h3 { color: #333; }
+      pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow: auto; white-space: pre-wrap; word-wrap: break-word; }
+      code { background: #eee; padding: 2px 4px; border-radius: 3px; }
+      .endpoint, .section { background: #f9f9f9; padding: 15px; border-left: 5px solid #27ae60; margin-bottom: 20px; border-radius: 0 5px 5px 0; }
+      .important { color: #c0392b; font-weight: bold; }
+      ul { padding-left: 20px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 15px;} 
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background-color: #f2f2f2; }
+      .button { display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 4px; margin-top: 15px; }
+  body
+    h1 OpenServ MCP Proxy
+    
+    div.section
+      h2 MCP Endpoint
+      p
+        | URL: 
+        code /mcp
+        |  (Supports POST for MCP messages)
+      p
+        | This server implements the 
+        a(href="https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http") Streamable HTTP Transport
+        | .
+      p.important
+        | To connect, your MCP client must send an 
+        code initialize
+        |  POST request. The 
+        code applicationName
+        |  should be provided as a URL query parameter (
+        code ?applicationName=YOUR_APPLICATION_NAME
+        | ).
+        
+    div.section
+      h2 Legacy SSE Transport
+      p
+        | URL: 
+        code /sse
+        |  (SSE endpoint) and 
+        code /messages
+        |  (JSONRPC message endpoint)
+      p This server also supports the deprecated HTTP+SSE Transport for backward compatibility.
+      p.important
+        | To connect using SSE, you need to provide an Application Name as a URL query parameter: 
+        code /sse?applicationName=YOUR_APPLICATION_NAME
+        
+    div.section
+      h2 Admin Tool Management
+      p Go to the admin page to manage your tools:
+      a.button(href="/admin") Go to Admin Panel 
