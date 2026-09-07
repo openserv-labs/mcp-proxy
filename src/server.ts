@@ -44,13 +44,20 @@ export async function bootstrap() {
   app.post('/messages', legacySseMessageHandler)
 
   /* ─────────────── Error handling ─────────────── */
-  const errorHandler: ErrorRequestHandler = (err, _req, res) => {
+  const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+    if (res.headersSent) {
+      next(err)
+      return
+    }
+
     if (err instanceof McpError) {
       logger.warn(`MCP Error: ${err.message}`)
       res.status(err.httpStatus).json(err)
       return
     }
-    logger.error('Unexpected error', err)
+
+    logger.error(err, 'Unexpected error')
+    res.status(500).json({ error: 'Internal server error' })
   }
 
   app.use(errorHandler)
