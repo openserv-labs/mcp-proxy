@@ -3,6 +3,7 @@ import type { Request } from 'express'
 import type { ParamsDictionary } from 'express-serve-static-core'
 
 import * as applications from '../services/application-manager'
+import { checkBackendUrl } from '../services/backend-url'
 import type { Tool } from '../types'
 
 const router = express.Router()
@@ -24,12 +25,27 @@ router.get('/api/application', async (req, res) => {
 
 router.post('/api/application', async (req, res) => {
   const applicationName = getAppName(req)
-  const { backendUrl } = req.body as { backendUrl?: string }
+  const { backendUrl } = req.body as { backendUrl?: unknown }
+
+  if (backendUrl !== undefined && typeof backendUrl !== 'string') {
+    res.status(400).json({ error: 'backendUrl must be a string' })
+    return
+  }
+
+  let validated: string | undefined
+  if (backendUrl?.trim()) {
+    const check = checkBackendUrl(backendUrl)
+    if (!check.ok) {
+      res.status(400).json({ error: `Invalid backend URL: ${check.reason}` })
+      return
+    }
+    validated = check.url.href
+  }
 
   if (await applications.applicationExists(applicationName)) {
-    if (backendUrl) await applications.updateBackendUrl(applicationName, backendUrl.trim())
+    if (validated) await applications.updateBackendUrl(applicationName, validated)
   } else {
-    await applications.createApplication(applicationName, backendUrl?.trim())
+    await applications.createApplication(applicationName, validated)
   }
   res.sendStatus(204)
 })
