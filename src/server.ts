@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import express, { type Request, type Response, type ErrorRequestHandler } from 'express'
 import path from 'node:path'
-import cors from 'cors'
+import cors, { type CorsOptions } from 'cors'
 
 import adminRoutes from './routes/admin.js'
 import {
@@ -14,12 +14,37 @@ import { initializeDatabase } from './database/index.js'
 import { logger } from './utils/logger.js'
 import { McpError } from './utils/jsonrpc-error.js'
 
+// CORS_ORIGINS is a comma-separated list of allowed origins; "*" allows any.
+// With nothing configured no CORS headers are sent.
+function corsOptions(): CorsOptions {
+  const configured = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+
+  let origin: CorsOptions['origin'] = false
+
+  if (configured.includes('*')) {
+    logger.warn('CORS_ORIGINS is "*" - any website may call this server from a browser')
+    origin = true
+  } else if (configured.length > 0) {
+    origin = configured
+  }
+
+  return {
+    origin,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    exposedHeaders: ['Mcp-Session-Id'],
+    maxAge: 600
+  }
+}
+
 export async function bootstrap() {
   await initializeDatabase()
 
   const app = express()
 
-  app.use(cors())
+  app.use(cors(corsOptions()))
   app.use(express.json())
 
   /* ─────────────── Static Files ─────────────── */
