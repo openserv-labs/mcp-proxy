@@ -4,15 +4,20 @@ import type { ParamsDictionary } from 'express-serve-static-core'
 
 import * as applications from '../services/application-manager'
 import { checkBackendUrl } from '../services/backend-url'
+import { requireAdminToken } from '../middleware/admin-auth'
+import { getApplicationNameHeader, requireApplicationName } from '../middleware/application-name'
 import type { Tool } from '../types'
 
 const router = express.Router()
 
 // ───────────────────────── Helpers ─────────────────────────
-const getAppName = (req: Request) => req.headers['x-application-name'] as string
+const getAppName = (req: Request) => getApplicationNameHeader(req)
 
 // ───────────────────────── Views ───────────────────────────
 router.get('/', (_req, res) => res.render('admin'))
+
+// ───────────────────────── Guards ──────────────────────────
+router.use('/api', requireAdminToken(), requireApplicationName)
 
 // ─────────────────── API: Application profile ─────────────────────
 router.get('/api/application', async (req, res) => {
