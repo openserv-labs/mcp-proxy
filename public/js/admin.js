@@ -350,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (editingToolName) {
         // Update existing tool
-        response = await fetch(`/admin/api/tools/${editingToolName}`, {
+        response = await fetch(`/admin/api/tools/${encodeURIComponent(editingToolName)}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -412,7 +412,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const applicationName = applicationNameInput.value.trim()
 
-    fetch(`/admin/api/tools/${toolName}`, {
+    fetch(`/admin/api/tools/${encodeURIComponent(toolName)}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
