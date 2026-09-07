@@ -47,8 +47,13 @@ router.post('/api/application', async (req, res) => {
     validated = check.url.href
   }
 
+  // An explicit "" clears the stored URL; omitting the field leaves it untouched.
+  const nextBackendUrl = backendUrl === undefined ? undefined : (validated ?? '')
+
   if (await applications.applicationExists(applicationName)) {
-    if (validated) await applications.updateBackendUrl(applicationName, validated)
+    if (nextBackendUrl !== undefined) {
+      await applications.updateBackendUrl(applicationName, nextBackendUrl)
+    }
   } else {
     await applications.createApplication(applicationName, validated)
   }
