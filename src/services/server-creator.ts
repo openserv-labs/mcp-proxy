@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import type { ZodRawShape } from 'zod'
 import * as toolManager from './application-manager'
+import { buildToolUrl, checkBackendUrl, requestBackend } from './backend-url'
 import {
   type SimplifiedParamSchema,
   type ApplicationToolConfig,
@@ -9,6 +10,7 @@ import {
   proxyResponseSchema
 } from '../types'
 import { RpcCode, McpError } from '../utils/jsonrpc-error'
+import { logger } from '../utils/logger'
 
 // Handler for forwarding requests to backend
 const proxyHandler = async (
@@ -26,16 +28,26 @@ const proxyHandler = async (
       )
     }
 
-    const baseUrl = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl
-    const endpointUrl = `${baseUrl}/${toolName}`
+    // The stored value may predate the current policy, so it is checked on every call.
+    const check = checkBackendUrl(backendUrl)
+    if (!check.ok) {
+      logger.warn(
+        `Refusing to proxy "${toolName}" for ${applicationName}: backend URL rejected (${check.reason})`
+      )
+      throw new McpError(
+        RpcCode.INTERNAL_ERROR,
+        'Backend URL is not permitted by the server policy. Update it in the admin interface.'
+      )
+    }
 
-    const response = await fetch(endpointUrl, {
-      method: 'POST',
+    const response = await requestBackend(buildToolUrl(check.url, toolName), {
+      body: JSON.stringify(args),
       headers: {
         'Content-Type': 'application/json',
+        Accept: 'application/json',
         'X-Application-Name': applicationName
       },
-      body: JSON.stringify(args)
+      trustedHost: check.hostAllowlisted
     })
 
     if (!response.ok) {
@@ -45,7 +57,15 @@ const proxyHandler = async (
       )
     }
 
-    const responseData = await response.json()
+    let responseData: unknown
+    try {
+      responseData = JSON.parse(response.body)
+    } catch {
+      throw new McpError(
+        RpcCode.INTERNAL_ERROR,
+        `Backend response for "${toolName}" was not valid JSON`
+      )
+    }
 
     const validatedResponse = proxyResponseSchema.safeParse(responseData)
 
@@ -66,10 +86,8 @@ const proxyHandler = async (
     if (error instanceof McpError) {
       throw error
     }
-    throw new McpError(
-      RpcCode.INTERNAL_ERROR,
-      `Proxy request to tool "${toolName}" failed: ${error}`
-    )
+    logger.error(error, `Proxy request to tool "${toolName}" for ${applicationName} failed`)
+    throw new McpError(RpcCode.INTERNAL_ERROR, `Proxy request to tool "${toolName}" failed`)
   }
 }
 
