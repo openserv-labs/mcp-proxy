@@ -1,7 +1,6 @@
 import dns from 'node:dns'
-import http from 'node:http'
-import https from 'node:https'
-import type { LookupFunction } from 'node:net'
+
+import axios, { type AddressFamily, type LookupAddress, type LookupAddressEntry } from 'axios'
 
 import {
   isBlockedAddress,
@@ -9,9 +8,48 @@ import {
   isIpLiteral,
   unwrapIpLiteral
 } from '../utils/network-address'
+import { logger } from '../utils/logger'
 
-const REQUEST_TIMEOUT_MS = 15_000
-const MAX_RESPONSE_BYTES = 1024 * 1024
+/** The callback form of axios' `lookup` option, which mirrors Node's own. */
+type LookupFunction = (
+  hostname: string,
+  options: dns.LookupOptions,
+  callback: (
+    err: NodeJS.ErrnoException | null,
+    address: LookupAddress | LookupAddress[],
+    family?: AddressFamily
+  ) => void
+) => void
+
+// Node types `family` as a plain number; axios narrows it to 4 | 6.
+const toLookupEntry = (entry: dns.LookupAddress): LookupAddressEntry => ({
+  address: entry.address,
+  family: entry.family === 6 ? 6 : 4
+})
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
+const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024
+
+// Read once: an unusable value should be reported at startup, not on every call.
+function positiveIntFromEnv(name: string, fallback: number) {
+  const raw = process.env[name]?.trim()
+  if (!raw) return fallback
+
+  const parsed = Number(raw)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    logger.warn(`${name}="${raw}" is not a positive integer - falling back to ${fallback}`)
+    return fallback
+  }
+
+  return parsed
+}
+
+/** Total deadline for a backend call, not an idle timeout. */
+const REQUEST_TIMEOUT_MS = positiveIntFromEnv('BACKEND_TIMEOUT_MS', DEFAULT_REQUEST_TIMEOUT_MS)
+const MAX_RESPONSE_BYTES = positiveIntFromEnv(
+  'BACKEND_MAX_RESPONSE_BYTES',
+  DEFAULT_MAX_RESPONSE_BYTES
+)
 
 export interface BackendUrlPolicy {
   /** Explicitly trusted hosts. Empty means any public host. */
@@ -124,39 +162,39 @@ export function buildToolUrl(backendUrl: URL, toolName: string): URL {
 
 /**
  * DNS lookup that refuses blocked addresses. Checking inside the lookup closes
- * the DNS-rebinding window: the socket connects to exactly the address returned.
+ * the DNS-rebinding window: the socket connects to exactly the addresses returned.
+ *
+ * Deliberately callback-style: axios only passes a `lookup` through untouched when
+ * it is not an async function, and its wrapper for promise-returning lookups keeps
+ * just the first address, which disables the IPv6-to-IPv4 fallback.
  */
-function guardedLookup(trusted: boolean): LookupFunction {
-  return (hostname, options, callback) => {
-    dns.lookup(hostname, { all: true, verbatim: true }, (err, addresses) => {
+const guardedLookup =
+  (trusted: boolean): LookupFunction =>
+  (hostname, options, callback) => {
+    dns.lookup(hostname, { ...options, all: true, verbatim: true }, (err, addresses) => {
       if (err) {
-        callback(err, '', 0)
+        callback(err, [])
         return
       }
 
       if (!trusted) {
         const blocked = addresses.find(entry => isBlockedAddress(entry.address))
         if (blocked) {
-          callback(
-            new Error(
-              `refusing to connect to blocked address ${blocked.address}`
-            ) as NodeJS.ErrnoException,
-            '',
-            0
-          )
+          callback(new Error(`refusing to connect to blocked address ${blocked.address}`), [])
           return
         }
       }
 
+      // Node asks for every address when Happy Eyeballs is enabled, one otherwise.
       if (options.all) {
-        callback(null, addresses)
+        callback(null, addresses.map(toLookupEntry))
         return
       }
 
-      callback(null, addresses[0].address, addresses[0].family)
+      const first = toLookupEntry(addresses[0])
+      callback(null, first.address, first.family)
     })
   }
-}
 
 export interface BackendResponse {
   ok: boolean
@@ -166,65 +204,57 @@ export interface BackendResponse {
 }
 
 /**
- * POSTs to a validated backend URL. Uses `node:http(s)` rather than `fetch` so the
- * guarded lookup can be installed and redirects are not followed.
+ * POSTs to a validated backend URL. Redirects are disabled so the guarded lookup
+ * applies to the one connection that is made.
  */
-export function requestBackend(
+export async function requestBackend(
   target: URL,
   options: { body: string; headers: Record<string, string>; trustedHost: boolean }
 ): Promise<BackendResponse> {
-  const transport = target.protocol === 'https:' ? https : http
   const host = unwrapIpLiteral(target.hostname)
 
   // IP literals bypass DNS resolution and therefore `guardedLookup`.
   if (!options.trustedHost && isIpLiteral(host) && isBlockedAddress(host)) {
-    return Promise.reject(new Error(`refusing to connect to blocked address ${host}`))
+    throw new Error(`refusing to connect to blocked address ${host}`)
   }
 
-  return new Promise((resolve, reject) => {
-    const request = transport.request(
-      target,
-      {
-        method: 'POST',
-        lookup: guardedLookup(options.trustedHost),
-        headers: {
-          ...options.headers,
-          'Content-Length': Buffer.byteLength(options.body)
-        }
-      },
-      response => {
-        const chunks: Buffer[] = []
-        let size = 0
+  // Axios' own `timeout` only covers socket inactivity, so a backend that trickles
+  // bytes can stay connected indefinitely. The signal makes the limit absolute; the
+  // timeout still cuts an idle socket short.
+  const deadline = new AbortController()
+  const deadlineTimer = setTimeout(() => deadline.abort(), REQUEST_TIMEOUT_MS)
 
-        response.on('data', (chunk: Buffer) => {
-          size += chunk.length
-          if (size > MAX_RESPONSE_BYTES) {
-            response.destroy()
-            reject(new Error(`backend response exceeded ${MAX_RESPONSE_BYTES} bytes`))
-            return
-          }
-          chunks.push(chunk)
-        })
-
-        response.on('end', () => {
-          const status = response.statusCode ?? 0
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            statusText: response.statusMessage ?? '',
-            body: Buffer.concat(chunks).toString('utf8')
-          })
-        })
-
-        response.on('error', reject)
-      }
-    )
-
-    request.setTimeout(REQUEST_TIMEOUT_MS, () => {
-      request.destroy(new Error(`backend request timed out after ${REQUEST_TIMEOUT_MS}ms`))
+  let response
+  try {
+    response = await axios.request<string>({
+      url: target.href,
+      method: 'POST',
+      data: options.body,
+      headers: options.headers,
+      lookup: guardedLookup(options.trustedHost),
+      // An environment proxy would make the socket connect to the proxy instead,
+      // leaving the backend host resolved by it and never seen by `guardedLookup`.
+      proxy: false,
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+      signal: deadline.signal,
+      maxContentLength: MAX_RESPONSE_BYTES,
+      responseType: 'text',
+      validateStatus: () => true
     })
+  } catch (error) {
+    if (deadline.signal.aborted) {
+      throw new Error(`backend request exceeded the ${REQUEST_TIMEOUT_MS}ms deadline`)
+    }
+    throw error
+  } finally {
+    clearTimeout(deadlineTimer)
+  }
 
-    request.on('error', reject)
-    request.end(options.body)
-  })
+  return {
+    ok: response.status >= 200 && response.status < 300,
+    status: response.status,
+    statusText: response.statusText,
+    body: response.data
+  }
 }

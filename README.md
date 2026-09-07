@@ -211,7 +211,9 @@ By default a backend URL must:
 Host names are additionally checked against the addresses they actually resolve
 to, at the moment the connection is made, so a name that resolves into private
 space cannot be used to get around the rule. Redirects are not followed, so a
-backend cannot bounce the proxy inward either.
+backend cannot bounce the proxy inward either. `HTTP_PROXY`/`HTTPS_PROXY` are
+ignored for backend calls for the same reason: a forward proxy would resolve the
+backend host itself, out of reach of these checks.
 
 Two settings adjust this:
 
