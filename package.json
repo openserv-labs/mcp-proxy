@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cpy src/views/*.pug build/views",
+    "build": "tsc && cpy src/views/*.pug build/views --flat",
     "start": "node build/server.js",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
