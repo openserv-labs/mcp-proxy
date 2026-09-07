@@ -89,11 +89,21 @@ export async function bootstrap() {
 
   /* ─────────────── Server startup ─────────────── */
   const port = Number(process.env.PORT) || 3000
-  const server = app.listen(port, () => {
-    logger.info(`MCP server running at http://localhost:${port}`)
-    logger.info(`Admin UI        : http://localhost:${port}/admin`)
-    logger.info(`HTTP transport  : http://localhost:${port}/mcp`)
-    logger.info(`SSE transport   : http://localhost:${port}/sse`)
+  const host = process.env.HOST?.trim() || '127.0.0.1'
+
+  if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
+    logger.warn(
+      `Binding to ${host} exposes this server beyond localhost. ` +
+        'Make sure ADMIN_TOKEN is set and the port is firewalled appropriately.'
+    )
+  }
+
+  const server = app.listen(port, host, () => {
+    const baseUrl = `http://${host.includes(':') ? `[${host}]` : host}:${port}`
+    logger.info(`MCP server running at ${baseUrl}`)
+    logger.info(`Admin UI        : ${baseUrl}/admin`)
+    logger.info(`HTTP transport  : ${baseUrl}/mcp`)
+    logger.info(`SSE transport   : ${baseUrl}/sse`)
   })
 
   return { app, server }
