@@ -57,7 +57,9 @@ Now, any MCP-compatible client can connect to your MCP Proxy with `?applicationN
 You can use MCP Proxy to connect real-world devices to MCP clients. For example, we created **Arduinogent**: a simple Arduino web server that exposes tool endpoints directly from an Arduino board. This lets you control or query your Arduino from any MCP-compatible client!
 
 - In the admin UI, set Application Name: `arduino-lab`
-- Backend URL: `http://<your-arduino-ip>`
+- Backend URL: `http://<your-arduino-ip>` (a private, plain-HTTP backend, so set
+  `BACKEND_ALLOWED_HOSTS` and `BACKEND_ALLOW_HTTP` - see [Backend
+  URLs](#backend-urls))
 - Add tools, e.g.:
   - `led` (parameters: state)
   - `temperature` (no parameters)
@@ -131,13 +133,20 @@ Now, you can control your Arduino from any MCP client via MCP Proxy, just like a
    npm install
    ```
 
-3. Create a `.env` file in the project root:
+3. Create a `.env` file in the project root (see `.env.example`):
 
    ```
    PORT=3000
+   HOST=127.0.0.1
    MONGODB_URI=mongodb://localhost:27017/mcp-proxy
+   ADMIN_TOKEN=<a long random secret>
+   CORS_ORIGINS=
    LOG_LEVEL=info
    ```
+
+   Generate the admin token with `openssl rand -hex 32`. **The admin API is
+   disabled until `ADMIN_TOKEN` is set** - see [Securing the admin
+   API](#securing-the-admin-api).
 
 4. Build the project:
 
@@ -149,6 +158,87 @@ Now, you can control your Arduino from any MCP client via MCP Proxy, just like a
    ```bash
    npm start
    ```
+
+## Securing the admin API
+
+The admin API (`/admin/api/*`) reads and writes the backend URL and tool
+definitions for every application, so it is protected by an admin credential.
+
+### Admin token
+
+Every `/admin/api/*` request must carry the `ADMIN_TOKEN` as a bearer token:
+
+```bash
+curl http://127.0.0.1:3000/admin/api/tools \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "X-Application-Name: my-company"
+```
+
+`X-Application-Name` selects which application to act on; it is not a
+credential. The admin UI at `/admin` prompts for the token and keeps it in the
+tab's `sessionStorage` only.
+
+The server fails closed: if `ADMIN_TOKEN` is unset or shorter than 16
+characters, every admin API request is rejected with `503` and the reason is
+logged at startup.
+
+### Network binding
+
+The server binds `127.0.0.1` by default. To expose it, set `HOST=0.0.0.0` -
+only behind a firewall or reverse proxy, and only with `ADMIN_TOKEN` set.
+
+### CORS
+
+Cross-origin requests are refused unless `CORS_ORIGINS` lists the exact origins
+you want to allow (comma-separated), for example
+`CORS_ORIGINS=https://admin.example.com`. Setting `CORS_ORIGINS=*` restores the
+old allow-anything behaviour and is not recommended.
+
+### Backend URLs
+
+An application's backend URL is fetched server-side, so a bad value turns the
+proxy into a relay into its own network. Backend URLs are therefore validated
+when they are stored **and** re-checked on every tool call, and the connection
+itself is restricted.
+
+By default a backend URL must:
+
+- use `https`, with no embedded credentials and no query string or fragment;
+- point at a public host - loopback, private, link-local, carrier-grade NAT and
+  reserved ranges are refused, including the `169.254.169.254` and
+  `fd00:ec2::254` cloud metadata endpoints.
+
+Host names are additionally checked against the addresses they actually resolve
+to, at the moment the connection is made, so a name that resolves into private
+space cannot be used to get around the rule. Redirects are not followed, so a
+backend cannot bounce the proxy inward either.
+
+Two settings adjust this:
+
+| Variable                | Effect                                                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BACKEND_ALLOWED_HOSTS` | Comma-separated allow list; an entry may start with `*.` to match subdomains. When set, only these hosts are reachable, and they are trusted (private addresses are permitted). |
+| `BACKEND_ALLOW_HTTP`    | Set truthy to permit `http://` backends.                                                                                                                                        |
+
+### Backend request limits
+
+| Variable                     | Default   | Effect                                                                                                               |
+| ---------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `BACKEND_TIMEOUT_MS`         | `15000`   | Total deadline for a backend call - not an idle timeout, so a tool that legitimately takes longer needs this raised. |
+| `BACKEND_MAX_RESPONSE_BYTES` | `1048576` | Largest backend response the proxy will read. Larger responses fail the tool call.                                   |
+
+To reach a backend on a private network - the Arduino example above, or a
+service on `localhost` - name it explicitly and allow plain HTTP:
+
+```
+BACKEND_ALLOWED_HOSTS=192.168.1.50
+BACKEND_ALLOW_HTTP=true
+```
+
+Note that `/mcp` and `/sse` are the client-facing endpoints and carry no
+credential of their own, so anyone who knows an application name can trigger a
+tool call. The control on that path is which URLs the proxy is willing to
+fetch, not who may ask it to.
 
 ## Contributing
 
