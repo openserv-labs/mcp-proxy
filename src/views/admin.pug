@@ -11,8 +11,18 @@ html(lang="en")
     div.container
       div.header
         h2 MCP Tool Administration
-        p.text-secondary Configure and manage your MCP tools. Start by entering your Application Name to access your tools.
+        p.text-secondary Configure and manage your MCP tools. Start by entering the admin token and your Application Name to access your tools.
       
+      div.card
+        div.flex.flex-vertical.gap-small
+          label.label(for="adminToken") Admin Token:
+          div.input-group
+            input.input#adminToken(type="password", placeholder="Enter the server's ADMIN_TOKEN", autocomplete="current-password")
+          p.text-secondary
+            | Required for every admin API call. It is kept in this browser tab only
+            | (sessionStorage) and sent as a bearer token.
+          p.error-text#adminTokenError
+
       div.card
         div.flex.flex-vertical.gap-small
           label.label(for="applicationName") Application Name:

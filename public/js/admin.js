@@ -1,10 +1,12 @@
 /* eslint-env browser */
-/* global document, window, localStorage, alert, confirm */
+/* global document, window, localStorage, sessionStorage, alert, confirm */
 // biome-ignore lint/style/useTemplate: allow string concatenation for legacy code
 // biome-ignore lint/complexity/noForEach: allow forEach for legacy code
 
 document.addEventListener('DOMContentLoaded', () => {
   // DOM Elements
+  const adminTokenInput = document.getElementById('adminToken')
+  const adminTokenError = document.getElementById('adminTokenError')
   const applicationNameInput = document.getElementById('applicationName')
   const loadToolsButton = document.getElementById('loadTools')
   const applicationNameError = document.getElementById('applicationNameError')
@@ -47,6 +49,54 @@ document.addEventListener('DOMContentLoaded', () => {
     applicationNameInput.value = savedApplicationName
   }
 
+  const savedAdminToken = sessionStorage.getItem('mcpAdminToken')
+  if (savedAdminToken) {
+    adminTokenInput.value = savedAdminToken
+  }
+
+  adminTokenInput.addEventListener('input', () => {
+    adminTokenError.textContent = ''
+  })
+
+  async function adminFetch(url, options = {}) {
+    const adminToken = adminTokenInput.value.trim()
+
+    if (!adminToken) {
+      adminTokenError.textContent = 'Admin token is required'
+      throw new Error('Admin token is required')
+    }
+
+    adminTokenError.textContent = ''
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + adminToken,
+        'X-Application-Name': applicationNameInput.value.trim(),
+        ...(options.headers || {})
+      }
+    })
+
+    if (response.status === 401) {
+      sessionStorage.removeItem('mcpAdminToken')
+      adminTokenError.textContent = 'Invalid admin token'
+      throw new Error('Invalid admin token')
+    }
+
+    if (response.status === 503) {
+      adminTokenError.textContent =
+        'The admin API is disabled: the server has no valid ADMIN_TOKEN configured'
+      throw new Error('Admin API is disabled')
+    }
+
+    if (response.ok) {
+      sessionStorage.setItem('mcpAdminToken', adminToken)
+    }
+
+    return response
+  }
+
   // Generate unique ID
   function generateId() {
     return 'param_' + Math.random().toString(36).substring(2, 11)
@@ -65,13 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       // First load application profile
-      const applicationResponse = await fetch('/admin/api/application', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Application-Name': applicationName
-        }
-      })
+      const applicationResponse = await adminFetch('/admin/api/application', { method: 'GET' })
 
       if (!applicationResponse.ok) {
         const errorData = await applicationResponse.json()
@@ -85,13 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
       applicationContainer.style.display = 'block'
 
       // Then load tools
-      const toolsResponse = await fetch('/admin/api/tools', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Application-Name': applicationName
-        }
-      })
+      const toolsResponse = await adminFetch('/admin/api/tools', { method: 'GET' })
 
       if (!toolsResponse.ok) {
         const errorData = await toolsResponse.json()
@@ -113,19 +151,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Save application profile
   async function saveApplicationProfile() {
-    const applicationName = applicationNameInput.value.trim()
     const backendUrl = backendUrlInput.value.trim()
 
     // Clear previous errors
     backendUrlError.textContent = ''
 
     try {
-      const response = await fetch('/admin/api/application', {
+      const response = await adminFetch('/admin/api/application', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Application-Name': applicationName
-        },
         body: JSON.stringify({ backendUrl })
       })
 
@@ -319,8 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return
     }
 
-    const applicationName = applicationNameInput.value.trim()
-
     // Gather parameters
     const parameters = []
     const paramRows = parametersContainer.querySelectorAll('.parameter-card')
@@ -350,12 +381,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (editingToolName) {
         // Update existing tool
-        response = await fetch(`/admin/api/tools/${editingToolName}`, {
+        response = await adminFetch(`/admin/api/tools/${encodeURIComponent(editingToolName)}`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Application-Name': applicationName
-          },
           body: JSON.stringify(toolData)
         })
       } else {
@@ -366,12 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Add new tool
-        response = await fetch('/admin/api/tools', {
+        response = await adminFetch('/admin/api/tools', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Application-Name': applicationName
-          },
           body: JSON.stringify(toolData)
         })
       }
@@ -410,15 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return
     }
 
-    const applicationName = applicationNameInput.value.trim()
-
-    fetch(`/admin/api/tools/${toolName}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Application-Name': applicationName
-      }
-    })
+    adminFetch(`/admin/api/tools/${encodeURIComponent(toolName)}`, { method: 'DELETE' })
       .then(response => {
         if (!response.ok) {
           return response.json().then(errorData => {

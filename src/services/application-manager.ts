@@ -61,5 +61,6 @@ export async function getBackendUrl(applicationName: string): Promise<string | u
   return application?.backendUrl
 }
 
+// Mongoose skips schema validators on updates unless runValidators is set.
 export const updateBackendUrl = (applicationName: string, backendUrl: string) =>
-  ApplicationModel.updateOne({ applicationName }, { $set: { backendUrl } })
+  ApplicationModel.updateOne({ applicationName }, { $set: { backendUrl } }, { runValidators: true })

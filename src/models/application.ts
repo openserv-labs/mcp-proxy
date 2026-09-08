@@ -1,4 +1,5 @@
 import { Schema, model, type Document } from 'mongoose'
+import { checkBackendUrl } from '../services/backend-url'
 import type { ParamConfig, Tool, Application } from '../types'
 
 export interface IParamConfig extends Omit<ParamConfig, 'id'>, Document {
@@ -35,7 +36,16 @@ export const ToolSchema = new Schema<ITool>(
 
 const ApplicationSchema = new Schema<IApplication>({
   applicationName: { type: String, required: true, unique: true, index: true },
-  backendUrl: { type: String },
+  backendUrl: {
+    type: String,
+    validate: {
+      validator: (value: string) => !value || checkBackendUrl(value).ok,
+      message: (props: { value: string }) => {
+        const check = checkBackendUrl(props.value)
+        return check.ok ? 'Invalid backend URL' : `Invalid backend URL: ${check.reason}`
+      }
+    }
+  },
   tools: [ToolSchema]
 })
 

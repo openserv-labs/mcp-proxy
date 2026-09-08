@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "tsc && cpy src/views/*.pug build/views",
+    "build": "tsc && cpy src/views/*.pug build/views --flat",
     "start": "node build/server.js",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
@@ -16,6 +16,7 @@
   "description": "A simple MCP proxy server",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.11.1",
+    "axios": "^1.20.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "echt": "^2.0.2",
